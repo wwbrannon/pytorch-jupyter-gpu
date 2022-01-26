@@ -1,48 +1,57 @@
-# or use something like nvidia/cuda:11.3.0-cudnn8-devel-ubuntu18.04 ?
-ARG PYTORCH_VERSION=1.10.0-cuda11.3-cudnn8-runtime
-ARG PYG_VERSION=1.10.0+cu113
+ARG IMAGE_VERSION=11.3.0-cudnn8-devel-ubuntu20.04
 ARG LOCALE=en_US.UTF-8
 
-FROM pytorch/pytorch:${PYTORCH_VERSION}
+ARG TORCH_URL=https://download.pytorch.org/whl/cu113/torch_stable.html
+ARG TORCH_VERSION=1.10.0+cu113
+ARG TV_VERSION=0.11.2+cu113
+ARG TA_VERSION=0.10.1+cu113
+ARG TT_VERSION=0.11.0
+ARG PYG_VERSION=1.10.0+cu113
+
+FROM nvidia/cuda:${IMAGE_VERSION}
 USER root
-
-#
-# Configure repos, install updates
-#
-
-ARG DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl gnupg ca-certificates apt-transport-https apt-utils lsb-release \
-    software-properties-common
-
-RUN curl -sSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
-RUN apt-add-repository "deb https://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main"
-
-RUN apt-get update && apt-get -y dist-upgrade
 
 #
 # Install system software
 #
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update # && apt-get -y dist-upgrade
+RUN apt-get install -y --no-install-recommends \
+    ca-certificates apt-transport-https apt-utils curl lsb-release \
+    software-properties-common
+
+RUN curl https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB | apt-key add -
+RUN apt-add-repository "deb https://apt.repos.intel.com/mkl all main"
 
 RUN apt-get install -y --no-install-recommends \
     "$(: Kerberos support for bigdisk fs)" \
     krb5-user kstart \
     \
     "$(: Development tools)" \
-    build-essential gfortran binutils \
+    build-essential gfortran binutils cmake \
     autoconf automake m4 bison flex gdb libtool \
     jq pkg-config shellcheck ctags \
     bzip2 gzip zip unzip \
-    git subversion \
+    git git-lfs subversion \
     curl wget \
     vim nano \
     screen less \
     openssh-client ssh-askpass \
     \
+    "$(: apt utils)" \
+    gnupg apt-utils lsb-release \
+    \
+    "$(: Python basics)" \
+    python3 pip pipenv \
+    \
     "$(: Database tools)" \
     sqlite3 unixodbc unixodbc-dev odbc-postgresql pgtop \
     postgresql-client mysql-client libpq-dev \
+    \
+    "$(: Torch deps)" \
+    intel-mkl libjpeg-dev libpng-dev openmpi-bin \
     \
     "$(: Misc Jupyter dependencies including tex)" \
     sudo locales tzdata fonts-liberation fonts-dejavu inkscape ffmpeg \
@@ -53,22 +62,15 @@ RUN apt-get install -y --no-install-recommends \
 RUN rm -rf /var/lib/apt/lists/*
 
 #
-# Update conda and install jupyter
+# Install packages
+#
+# This is systemwide for simplicity, can use venv for particular projects
+# if needed
 #
 
-RUN conda update -n base -c defaults conda
-
-RUN conda install -y \
-    tini notebook jupyter jupyterhub jupyterlab nbconvert nbformat ipywidgets
-
-RUN conda install -y -c conda-forge jupyterlab-git
-
-RUN conda clean --all -y && \
-    npm cache clean --force
-
-#
-# Install other software
-#
+RUN pip install -f ${TORCH_URL} \
+                torch=${TORCH_VERSION} torchaudio=${TA_VERSION} \
+                torchvision=${TV_VERSION} torchtext=${TT_VERSION}
 
 RUN pip install \
     numpy pandas numexpr pandasql \
@@ -78,13 +80,22 @@ RUN pip install \
     \
     sqlalchemy psycopg2 \
     \
-    torchviz torchsummary captum tensorboard \
     transformers datasets sentencepiece emoji \
-    pytorch-lightning pytorch-lightning-bolts
+    torchviz torchsummary captum tensorboard \
+    pytorch-lightning pytorch-lightning-bolts skorch
 
 RUN pip install -f https://data.pyg.org/whl/torch-${PYG_VERSION}.html \
                 torch-scatter torch-sparse torch-cluster torch-spline-conv \
                 torch-geometric
+
+#
+# Install jupyter
+#
+
+RUN python3 -m venv /opt/jupyter
+RUN /opt/jupyter/pip install \
+    notebook jupyter jupyterhub jupyterlab nbconvert nbformat ipywidgets \
+    jupyterlab-git
 
 #
 # Configuration
@@ -110,6 +121,7 @@ RUN chmod ugo+x /usr/local/bin/fix-permissions
 
 EXPOSE 8000
 
-ENTRYPOINT ["tini", "-g", "--"]
-CMD ["start.sh"]
+# expected to be run with --init
+# ENTRYPOINT ["tini", "-g", "--"]
 
+CMD ["start.sh"]

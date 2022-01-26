@@ -2,5 +2,4 @@
 
 set -e
 
-jupyterhub -f /etc/jupyter/jupyterhub_config.py
-
+/opt/jupyter/bin/jupyterhub -f /etc/jupyter/jupyterhub_config.py
