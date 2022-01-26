@@ -1,9 +1,9 @@
-ARG PYTORCH_VERSION=1.7.0-cuda11.0-cudnn8-runtime
-FROM pytorch/pytorch:${PYTORCH_VERSION}
-
-ARG PYTORCH_GEOMETRIC_VERSION=1.7.0+cu110
+# or use something like nvidia/cuda:11.3.0-cudnn8-devel-ubuntu18.04 ?
+ARG PYTORCH_VERSION=1.10.0-cuda11.3-cudnn8-runtime
+ARG PYG_VERSION=1.10.0+cu113
 ARG LOCALE=en_US.UTF-8
 
+FROM pytorch/pytorch:${PYTORCH_VERSION}
 USER root
 
 #
@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common
 
 RUN curl -sSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
-RUN apt-add-repository "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main"
+RUN apt-add-repository "deb https://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main"
 
 RUN apt-get update && apt-get -y dist-upgrade
 
@@ -53,50 +53,38 @@ RUN apt-get install -y --no-install-recommends \
 RUN rm -rf /var/lib/apt/lists/*
 
 #
-# Update conda and install software
+# Update conda and install jupyter
 #
 
 RUN conda update -n base -c defaults conda
 
 RUN conda install -y \
-    tini notebook jupyter jupyterhub jupyterlab nbconvert nbformat ipywidgets \
-    \
+    tini notebook jupyter jupyterhub jupyterlab nbconvert nbformat ipywidgets
+
+RUN conda install -y -c conda-forge jupyterlab-git
+
+RUN conda clean --all -y && \
+    npm cache clean --force
+
+#
+# Install other software
+#
+
+RUN pip install \
     numpy pandas numexpr pandasql \
     scipy scikit-learn statsmodels scikit-image patsy networkx nltk spacy \
     jinja2 tqdm pyyaml requests unidecode python-louvain \
     graphviz pydot matplotlib seaborn \
-    sqlalchemy sqlite psycopg2
+    \
+    sqlalchemy psycopg2 \
+    \
+    torchviz torchsummary captum tensorboard \
+    transformers datasets sentencepiece emoji \
+    pytorch-lightning pytorch-lightning-bolts
 
-RUN conda install -y -c pytorch \
-    torchtext torchvision torchaudio captum
-
-RUN conda install -y -c huggingface -c conda-forge \
-    datasets
-
-RUN conda install -y -c conda-forge \
-    transformers sentencepiece emoji tensorboard jupyterlab-git
-
-# These are not kept up to date enough on conda and so we go elsewhere
-RUN pip install torchviz torchsummary pytorch-lightning pytorch-lightning-bolts
-RUN pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-${PYTORCH_GEOMETRIC_VERSION}.html && \
-    pip install torch-sparse -f https://pytorch-geometric.com/whl/torch-${PYTORCH_GEOMETRIC_VERSION}.html && \
-    pip install torch-cluster -f https://pytorch-geometric.com/whl/torch-${PYTORCH_GEOMETRIC_VERSION}.html && \
-    pip install torch-spline-conv -f https://pytorch-geometric.com/whl/torch-${PYTORCH_GEOMETRIC_VERSION}.html && \
-    pip install torch-geometric
-
-# so we can use widgets in notebooks
-RUN jupyter nbextension enable --py widgetsnbextension --sys-prefix
-
-# facets, which does not have a pip or conda package at the moment
-RUN cd /tmp && \
-    git clone https://github.com/PAIR-code/facets.git && \
-    cd facets && \
-    jupyter nbextension install facets-dist/ --sys-prefix && \
-    cd && \
-    rm -rf /tmp/facets
-
-RUN conda clean --all -y && \
-    npm cache clean --force
+RUN pip install -f https://data.pyg.org/whl/torch-${PYG_VERSION}.html \
+                torch-scatter torch-sparse torch-cluster torch-spline-conv \
+                torch-geometric
 
 #
 # Configuration
